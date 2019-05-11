@@ -2,20 +2,17 @@
 
 module Text.Reggie
   (
-    module Text.Reggie.Parser
-  , rGen
+    module Text.Reggie.ASTParser
   )
 where
 
-import qualified Text.Reggie.Parser as P
 import Text.Reggie.Prelude
-import Text.Reggie.DSL
 import Text.Reggie.RegexGenerator
-import Text.Reggie.Parser (parse)
+import Text.Reggie.ASTParser (parse)
 import Test.QuickCheck
 import Debug.Trace
 
-rGen :: String -> Gen String
-rGen s = case parse s of
-  Left e  -> error $ show e
-  Right r -> genRegex r
+-- rGen :: String -> Gen String
+-- rGen s = case parse s of
+--   Left e  -> error $ show e
+--   Right r -> genRegex r

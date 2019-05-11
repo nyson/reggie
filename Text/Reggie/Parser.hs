@@ -1,34 +1,33 @@
-{-# LANGUAGE LambdaCase, TypeFamilies, RecordWildCards, TypeSynonymInstances, FlexibleInstances #-}
-module Text.Reggie.Parser (parse, regexTerm) where
+{-# LANGUAGE LambdaCase, TypeSynonymInstances, FlexibleInstances #-}
+module Text.Reggie.Parser where
 
-import Prelude as P hiding (lex)
-import Control.Monad (void)
-import Data.Bifunctor
-import Text.Megaparsec hiding (parse)
-import Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer as L
-import Control.Monad.Combinators.NonEmpty as NE
-import Control.Monad.Combinators.Expr
+import Text.Reggie.AST
+import Text.Reggie.Prelude
 
-import Data.List(intercalate)
-import qualified Text.Megaparsec as M
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Set as S
 
-import Text.Reggie.DSL
-import Text.Reggie.Prelude
+import Data.List (intercalate)
+import Debug.Trace (trace)
 
-import Debug.Trace
+import qualified Text.Megaparsec.Char.Lexer as L
+import Text.Megaparsec hiding (parse)
+import Text.Megaparsec.Char
+import qualified Text.Megaparsec.Char.Lexer as L
+
+import qualified Text.Megaparsec as M
+
+import Control.Monad.Combinators.NonEmpty
+import Control.Monad.Combinators.Expr
+
 
 type Parser = Parsec String String
-
--- TODO: parse "$[a-z]*" becomes 0*, why?
 
 instance ShowErrorComponent String where
   showErrorComponent = id
   errorComponentLen  = length
 
-prettifyErrors :: ParseErrorBundle String String -> NE.NonEmpty String
+prettifyErrors :: ParseErrorBundle String String -> NonEmpty String
 prettifyErrors errors = fmap showParseError $ bundleErrors errors
   where
     showParseError :: ParseError String String -> String
@@ -46,107 +45,68 @@ prettifyErrors errors = fmap showParseError $ bundleErrors errors
            ++ "expected " ++ combErrorSet c
     showParseError (FancyError a b) = show a ++ ": " ++ show b
 
-parse :: String -> Either (NE.NonEmpty String) Reggex
-parse input = first prettifyErrors $ M.parse outerRegex "" input
+parse :: String -> Either (NonEmpty String) Regex
+parse input = first prettifyErrors $ M.parse regex "" input
 
-maybeP :: Parser a -> Parser Bool
-maybeP p = choice [ try p *> return True
-                  , return False]
+regex :: Parser Regex
+regex = makeExprParser (Regex . (:[]) <$> stream) ops
+  where 
+    ops :: [[ Operator Parser Regex ]]
+    ops = [[ binary "|" regconcat ]]
+    binary :: String -> (a -> a -> a) -> Operator Parser a
+    binary n f = InfixL $ f <$ L.symbol space n
+    regconcat (Regex a) (Regex b) = Regex $ a ++ b
 
-outerRegex :: Parser Reggex
-outerRegex = do
-  start <- maybeP (char '^')
-  re <- regex
-  end <- maybeP (char '$')
-  return $ case border start end of
-    Nothing -> Reggex re
-    Just b -> Enclosed b re
+          
+stream :: Parser RegexStream
+stream = RegexStream <$> many term
 
-regex :: Parser RegexTerm
-regex = makeExprParser regexTerm operators
-
-regexTerm :: Parser RegexTerm
-regexTerm = choice [ rstring
-                   , parens regex
-                   , RCharSet <$> charset
-                   ]
-            >>= range
-
--- Default symbol consumber
-symbol :: MonadParsec e s m => Tokens s -> m (Tokens s)
-symbol = L.symbol (return ())
-
--- Helper for postfix operators
-postfix :: String -> (RegexTerm -> RegexTerm) -> Operator Parser RegexTerm
-postfix name node = Postfix (node <$ symbol name)
-
--- Regex operators
-operators :: [[Operator Parser RegexTerm]]
-operators = [[ postfix "*" Star
-             , postfix "?" Greedy
-             , postfix "+" Plus
-             ]
-            ]
-
-charset :: Parser CharSet
-charset = between (char '[') (char ']') (choice cs)
-    where cs = [ try $ NCharSet <$> (char '^' *> NE.some charsetItem)
-               , CharSet  <$> NE.some charsetItem
-               ]
-
-charsetItem :: Parser CharSetItem
-charsetItem = choice
-  [ try $ Span <$> lit <*> (char '-' >> lit)
-  , RCSLit <$> lit
+term :: Parser RegTerm
+term = repetitions =<< choice
+  [ try $ charsetTerm 
+  , try $ TEscaped <$> escaped
+  , TChar <$> alphaNumChar
   ]
 
-range :: RegexTerm -> Parser RegexTerm
-range re = choice
-  [ try $ r
-  , return re
+charsetTerm :: Parser RegTerm
+charsetTerm = choice 
+  [ TCharset True  <$> cst (string "^[")
+  , TCharset False <$> cst (char '[')
   ]
-  where
-    r = do start <- char '{'
-                    *> spaced integer
-                    <* char ','
-           choice [ try    $ Length  re start <$> spaced integer
-                  , return $ AtLeast re start]
-               <* spaced (char '}')
-
-spaced :: Parser a -> Parser a
-spaced p = many (char ' ') *> p <* many (char ' ')
-
-integer :: Parser Int
-integer = L.decimal
-
-rstring :: Parser RegexTerm
-rstring = String <$> NE.some lit
-
-escaped :: Char -> Parser ()
-escaped c = void (char '\\' >> char c)
+  where cst prefix = prefix *> many charsetItem <* char ']'
 
 hex :: Int -> Parser String
-hex 0 = return ""
+hex 0   = return ""
 hex len = hexDigitChar >>= \h -> fmap (h:) (hex (len - 1))
 
-lit :: Parser ReggexChar
-lit = choice [ try $ Unicode <$> (escaped 'u' *> hex 4)
-             , try $ Latin   <$> (escaped 'x' *> hex 2)
-             , try $ Control <$> (escaped 'c' *> letterChar)
-             , char '.'    *> return Dot
-             , try $ escaped 'n' *> return Newline
-             , try $ escaped '0' *> return Null
-             , try $ escaped 't' *> return Tab
-             , try $ escaped 'v' *> return VTab
-             , try $ escaped 'f' *> return FormFeed
-             , try $ escaped 'r' *> return CarReturn
-             , try $ escaped 's' *> return Whitespace
-             , try $ escaped 'd' *> return Digit
-             , try $ escaped 'w' *> return Word
-             , try $ escaped 'b' *> return Backspace
-             , try $ AlphaNum <$> char ' '
-             , AlphaNum <$> alphaNumChar
-             ]
+escaped :: Parser REscaped
+escaped = char '\\' *> choice 
+  [ Unicode <$> (char' 'u' *> hex 4)
+  , Latin   <$> (char' 'x' *> hex 2)
+  , Control <$> (char' 'c' *> letterChar)
+  , Escaped <$> printChar
+  ]
 
-parens :: Parser a -> Parser a
-parens   = between (symbol "(") (symbol ")")
+repetitions :: RegTerm -> Parser RegTerm
+repetitions term = choice 
+  [ char '*' *> return (TRep term 0 Nothing)
+  , char '+' *> return (TRep term 1 Nothing)
+  , TRep term 
+    <$> (char '{' *> space *> L.decimal <* space)
+    <*> (  char ','
+        *> space 
+        *> choice [try $ Just <$> L.decimal, pure Nothing] 
+        <* space 
+        <* char '}'
+        )  
+  , return term
+  ]
+  
+charsetItem :: Parser CharsetItem
+charsetItem = choice
+  [ try $ SSpan <$> alphaNumChar <*> (char '-' *> alphaNumChar)
+  , SChar <$> alphaNumChar
+  ]
+
+
+

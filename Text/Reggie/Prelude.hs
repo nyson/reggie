@@ -5,16 +5,18 @@
 
 module Text.Reggie.Prelude
   ( safeHead, neList
-  , genPositiveInteger, genHex
+  , genPositiveInteger, genHex, genValidChar, genLetterChar
   , NonEmpty(..), PrettyPrint(..)
   , StringConv(..)
   , (?), (??), (€), defCond
+  , module Data.Bifunctor
   ) where
 
 import Control.Applicative (liftA2)
 import qualified Data.List.NonEmpty as NE
 import Test.QuickCheck
 import Data.Default
+import Data.Bifunctor
 
 import Data.List.NonEmpty
 
@@ -30,6 +32,12 @@ instance StringConv String String where
 safeHead :: [a] -> Maybe a
 safeHead [] = Nothing
 safeHead (a:_) = Just a
+
+genValidChar :: Gen Char
+genValidChar = elements $ ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9']
+
+genLetterChar :: Gen Char
+genLetterChar = elements $ ['a'..'z'] ++ ['A'..'Z']
 
 -- | generates a sized of hex values
 genHex :: Int -> Gen String
