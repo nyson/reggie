@@ -7,8 +7,9 @@ import Text.Reggie.Prelude
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Set as S
 
-import Data.List (intercalate)
-import Debug.Trace (trace)
+import Data.List     (intercalate)
+import Debug.Trace   (trace)
+import Control.Monad (when)
 
 import qualified Text.Megaparsec.Char.Lexer as L
 import Text.Megaparsec hiding (parse)
@@ -16,6 +17,8 @@ import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
 import qualified Text.Megaparsec as M
+
+import Debug.Trace
 
 import Control.Monad.Combinators.NonEmpty
 import Control.Monad.Combinators.Expr
@@ -26,6 +29,9 @@ type Parser = Parsec String String
 instance ShowErrorComponent String where
   showErrorComponent = id
   errorComponentLen  = length
+
+testCharParser :: Parser Char -> String -> IO ()
+testCharParser ch = parseTest ch 
 
 prettifyErrors :: ParseErrorBundle String String -> NonEmpty String
 prettifyErrors errors = fmap showParseError $ bundleErrors errors
@@ -61,12 +67,22 @@ regex = makeExprParser (Regex . (:[]) <$> stream) ops
 stream :: Parser RegexStream
 stream = RegexStream <$> many term
 
+regexChar :: Parser Char
+regexChar = do
+    ch <- printChar
+    when (ch `elem` "(|)") (customFailure "tried to parse nonescaped reserved char")
+    return ch
+
 term :: Parser RegTerm
 term = repetitions =<< choice
-  [ try $ charsetTerm 
+  [ try $ parens
+  , try $ charsetTerm 
   , try $ TEscaped <$> escaped
-  , TChar <$> alphaNumChar
+  , TChar <$> try regexChar
   ]
+
+parens :: Parser RegTerm
+parens = TScope <$> (char '(' *> (trace "parsing parens" regex) <* char ')')
 
 charsetTerm :: Parser RegTerm
 charsetTerm = choice 

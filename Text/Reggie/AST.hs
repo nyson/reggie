@@ -5,7 +5,7 @@ import Test.QuickCheck
 import Text.Reggie.Prelude
 import Data.List (intercalate)
 
--- A disjunctive stream of regexes
+-- A disjoint stream of regexes
 newtype Regex = Regex [RegexStream]
   deriving (Show, Read)
 
@@ -31,7 +31,8 @@ instance PrettyPrint RegexStream where
 
 -- An item in a regex stream
 data RegTerm
-  = TChar Char
+  = TScope Regex
+  | TChar Char
   | TEscaped REscaped
   | TRep RegTerm Int (Maybe Int)
   | TCharset Bool [CharsetItem]
@@ -39,7 +40,8 @@ data RegTerm
 
 instance Arbitrary RegTerm where
   arbitrary = do
-    term <- oneof [ TChar    <$> genValidChar 
+    term <- oneof [ TScope   <$> arbitrary
+                  , TChar    <$> genValidChar 
                   , TEscaped <$> arbitrary
                   , TCharset <$> arbitrary <*> arbitrary
                   ]  
@@ -55,6 +57,7 @@ instance Arbitrary RegTerm where
 instance PrettyPrint RegTerm where
   pp = \case
     TChar c -> c:""
+    TScope r -> concat ["(", pp r, ")"]
     TEscaped e -> pp e
     TRep t 0 Nothing -> pp t ++ "*"
     TRep t 1 Nothing -> pp t ++ "+"

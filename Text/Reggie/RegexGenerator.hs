@@ -18,6 +18,7 @@ mkGenStream (RegexStream rs) = concat <$> mapM mkGenTerm rs
 mkGenTerm :: RegTerm -> Gen String
 mkGenTerm = \case 
   TChar c -> return $ c:""
+  TScope r -> mkGenRegex r
   TEscaped e -> mkGenEscaped e
   TCharset negated cs -> mkGenCharset negated cs
   TRep t start end -> mkGenRepetitions t start end

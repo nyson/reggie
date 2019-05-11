@@ -3,4 +3,5 @@ packages:
 - .
 extra-deps:
 - bifunctor-0.1.0.0
+- todo-0.2.0.2
 resolver: lts-13.15
