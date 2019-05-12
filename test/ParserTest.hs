@@ -5,13 +5,7 @@ import Test.QuickCheck.Property
 import Text.Reggie.Prelude
 import Text.Reggie.AST
 import Data.Either
-import Text.Reggie.ASTParser as R
-import Text.Reggie.Lexer as L
-
-prop_circularLex :: [RegLexeme] -> Property
-prop_circularLex rls = let l = L.getLexemes <$> (L.lex (pp rls))
-                           r = Right rls
-                       in l === r
+import Text.Reggie.Parser as R
 
 prop_circularParse :: Regex -> Property
 prop_circularParse rx

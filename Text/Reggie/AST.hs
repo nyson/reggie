@@ -4,6 +4,7 @@ module Text.Reggie.AST where
 import Test.QuickCheck
 import Text.Reggie.Prelude
 import Data.List (intercalate)
+import Debug.Trace 
 
 -- A disjoint stream of regexes
 newtype Regex = Regex [RegexStream]
@@ -40,11 +41,12 @@ data RegTerm
 
 instance Arbitrary RegTerm where
   arbitrary = do
-    term <- oneof [ TScope   <$> arbitrary
-                  , TChar    <$> genValidChar 
-                  , TEscaped <$> arbitrary
-                  , TCharset <$> arbitrary <*> arbitrary
-                  ]  
+    term <- frequency 
+      [ (1,   TScope   <$> scale (`div` 10) arbitrary)
+      , (100, TChar    <$> genValidChar)
+      , (5,   TEscaped <$> arbitrary)
+      , (10,  TCharset <$> arbitrary <*> arbitrary)
+      ]  
     frequency 
       [ (10, return term)
       , (1, TRep term 
