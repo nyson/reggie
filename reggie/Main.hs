@@ -1,8 +1,7 @@
 {-# LANGUAGE TypeApplications #-}
-module Main where
+module Main (main) where
 
 import System.Environment
-import Data.List (intercalate)
 import Text.Reggie.Prelude (pp)
 import Text.Reggie
 import Text.Reggie.AST
@@ -12,8 +11,7 @@ main :: IO ()
 main = getArgs >>= pArg
 
 pArg :: [String] -> IO ()
-pArg ("-p":r:_) = do
-  case parse r of
+pArg ("-p":r:_) = case parse r of
     Left e -> print e
     Right s -> mapM_ putStrLn
       [ "read '"++ r ++ "'..."
@@ -22,4 +20,4 @@ pArg ("-p":r:_) = do
 pArg ("-r":re:_) = case readMaybe @Regex re of
   Just r  -> putStrLn $ pp r
   Nothing -> putStrLn $ "Couldn't parse expression: '"++ re ++"'"
-pArg args = putStrLn $ "Arguments not recognized " ++ intercalate " " args
+pArg args = putStrLn $ "Arguments not recognized " ++ unwords args

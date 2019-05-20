@@ -1,79 +1,49 @@
-{-# LANGUAGE LambdaCase, TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 module Text.Reggie.RegexGenerator where
 
 import Text.Reggie.AST
 import Text.Reggie.Prelude
 import Test.QuickCheck
 import Control.Monad (mapM)
-import qualified Data.List.NonEmpty as NE
+import Control.Monad.Except
 
 type ReggexInput = String
+type RGen = ExceptT String Gen ()
 
-mkGenRegex :: Regex -> Gen String
-mkGenRegex (Regex r) = oneof (map mkGenStream r)
+mkGenRegex :: Regex -> Either String (Gen String)
+mkGenRegex = (Right . oneof =<<) . mapM mkGenStream . flatten
 
-mkGenStream :: RegexStream -> Gen String
-mkGenStream (RegexStream rs) = concat <$> mapM mkGenTerm rs
+mkGenStream :: RegexStream -> Either String (Gen String)
+mkGenStream (RegexStream rs) = fmap concat . sequence <$> mapM mkGenTerm rs
 
-mkGenTerm :: RegTerm -> Gen String
-mkGenTerm = \case 
-  TChar c -> return $ c:""
-  TScope r -> mkGenRegex r
+mkGenTerm :: RegTerm -> Either String (Gen String)
+mkGenTerm = \case
+  TChar c    -> return . return $ c:""
+  TScope r   -> mkGenRegex r
   TEscaped e -> mkGenEscaped e
   TCharset negated cs -> mkGenCharset negated cs
   TRep t start end -> mkGenRepetitions t start end
 
-mkGenEscaped :: REscaped -> Gen String
-mkGenEscaped = return . pp 
+mkGenEscaped :: REscaped -> Either String (Gen String)
+mkGenEscaped = return . return . pp
 
-mkGenRepetitions :: RegTerm -> Int -> Maybe Int -> Gen String
+mkGenRepetitions :: RegTerm -> Int -> Maybe Int -> Either String (Gen String)
 mkGenRepetitions term low = \case
-  Nothing -> do 
+  Nothing -> do
+    gen <- mkGenTerm term
     let conc2 a b = concat $ a <> b
-    conc2 <$> vectorOf low gen <*> listOf gen 
-  Just top -> choose (low, top) 
-              >>= fmap concat . sequence . flip replicate gen
-  
-  where gen = mkGenTerm term
-    
+    return $ conc2 <$> vectorOf low gen <*> listOf gen
+  Just top -> do
+    gen <- mkGenTerm term
+    return $ choose (low, top) >>= fmap concat . sequence . flip replicate gen
 
-mkGenCharset :: Bool -> [CharsetItem] -> Gen String
-mkGenCharset True  = error "negated charset not supported yet"
-mkGenCharset False = oneof . map mkGenCharsetItem
+mkGenCharset :: Bool -> [CharsetItem] -> Either String (Gen String)
+mkGenCharset True  = const $ Left "negated charset not supported yet"
+mkGenCharset False = \case
+  [] -> Left "An empty charset will never match a string"
+  xs@(_:_) -> oneof <$> mapM mkGenCharsetItem xs
 
-mkGenCharsetItem :: CharsetItem -> Gen String
+mkGenCharsetItem :: CharsetItem -> Either String (Gen String)
 mkGenCharsetItem = \case
-  SSpan a b -> (:"") <$> choose (a, b)
-  SChar c -> return (c:"")
--- mkmkGenRegex :: Reggex -> mkmkGen ReggexInput
--- mkmkGenRegex = mkmkGenTerm . \case
---   Enclosed _dir re -> re
---   Reggex re -> re
-
--- mkmkGenTerm :: RegexTerm -> mkGen ReggexInput
--- mkGenTerm = \case
---   r@(String _) -> return $ pp r
---   Star r -> concat <$> listOf (mkGenTerm r)
---   Plus r -> concat <$> listOf1 (mkGenTerm r)
---   Greedy _r -> error "Not handling greedies right now"
---   RCharSet cs -> pp <$> mkGenCharset cs
---   Length r sMin sMax -> do
---     len <- choose (sMin, sMax)
---     concat <$> vectorOf len (mkGenTerm r)
---   AtLeast r sMin -> do
---     NonNegative len <- arbitrary
---     concat <$> vectorOf len (mkGenTerm r)
-
--- mkGenCharset :: CharSet -> mkGen ReggexChar
--- mkGenCharset cs = do
---   let cs' = NE.toList $ unCharSet cs
---       spans = map (1,) [ fromChar <$> choose (start, end)
---                        | Span (AlphaNum start) (AlphaNum end) <- cs'
---                        ]
---       mkGen :: [(Int, mkGen ReggexChar)]
---       mkGen = case [ l | RCSLit l <- cs'] of
---         [] | null spans -> error $ "no mkGenerator could be constructed for '" ++ pp cs ++ "'"
---            | otherwise -> spans
---         xs -> (1, elements xs): spans
-
---   frequency mkGen
+  SSpan a b -> return $ (:"") <$> choose (a, b)
+  SChar c -> return $ return (c:"")
