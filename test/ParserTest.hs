@@ -17,9 +17,9 @@ prop_circularParse rx
        $ case reparsed of Right rp -> rp ===  rx
                           Left err -> error $ show err
 
-prop_circularMatch :: Regex -> Property
-prop_circularMatch reg = case eGen of
-  Left _err -> discard
-  Right gen -> forAll gen $ \s -> (match_ reg s, s, reg) === (True, s, reg)
-  where eGen = mkGenRegex reg
+-- prop_circularMatch :: Regex -> Property
+-- prop_circularMatch reg = case eGen of
+--   Left _err -> discard
+--   Right gen -> forAll gen $ \s -> (match_ reg s, s, reg) === (True, s, reg)
+--   where eGen = mkGenRegex reg
 
